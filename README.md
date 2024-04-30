@@ -1,0 +1,1 @@
+ode for benchmarking cGAN against Fuxi and GraphCast, verification code is under verification subfolder, see verification_stats.py for mainly, also tried isotonic distributional regression for post-processing using the R package (see isodistrreg)
