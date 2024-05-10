@@ -5,6 +5,8 @@ import xarray as xr
 import numpy as np
 from tqdm import tqdm
 import time
+from multiprocessing.dummy import Pool
+from joblib import Parallel, delayed
 
 
 def fit_idr_elev(df_ai, df_obs, elev, times_train, times_test, lowers, uppers):
@@ -36,46 +38,72 @@ def fit_idr_elev(df_ai, df_obs, elev, times_train, times_test, lowers, uppers):
     return idr_fit, preds_test, y_all_elev_test
 
 
-def fit_idr_gp(df_ai, df_obs, times_train, times_test):
+def fit_idr_gp(df_ai, df_obs, times_train, times_test, parallel=False, n_workers=5):
     print("Preparing data")
 
     preds_test = []
     idr_fit = []
     y_all_gp_test = []
 
-    mask = xr.open_dataset("~/cGAN/constants-regICPAC/lsm.nc").lsm.values.astype(bool)
+    mask = xr.open_dataset(
+        "/network/group/aopp/predict/TIP022_NATH_GFSAIMOD//cGAN/constants-regICPAC/lsm.nc"
+    ).lsm.values.astype(bool)
+    mask = ~mask
 
     lons, lats = np.meshgrid(df_ai.lon.values, df_ai.lat.values)
     lats = lats[mask]
     lons = lons[mask]
-
-    start_time = time.time()
-    i_gp = 0
     print("Fitting on %i grid points" % mask.sum())
-    for lat, lon in tqdm(zip(lats.flatten(), lons.flatten())):
-        X_train, y_train = prepare_data_over_gp(df_ai, df_obs, lat, lon, times_train)
-        X_test, y_test = prepare_data_over_gp(df_ai, df_obs, lat, lon, times_test)
-        fit_results = fit_idr(X_train, y_train, X_test)
+    start_time = time.time()
 
-        idr_fit.append(fit_results[0])
-        preds_test.append(fit_results[1])
-        y_all_gp_test.append(y_test)
+    if parallel:
+        # args = [(df_ai, df_obs, lat, lon,
+        #         times_train, times_test) for lat, lon in zip(lats.flatten(), lons.flatten())]
 
-        i_gp += 1
+        # pool = Pool(n_workers)
+        # fit_results = pool.starmap(fit_idr, args)
+        # pool.close()
+        # pool.join()
+
+        fit_results = Parallel(n_jobs=n_workers)(
+            delayed(fit_idr)(df_ai, df_obs, lat, lon, times_train, times_test)
+            for lat, lon in tqdm(zip(lats.flatten(), lons.flatten()))
+        )
+
+        idr_fit = []
+        preds_test = []
+        y_all_gp_test = []
+
+        for fit_result in fit_results:
+            idr_fit.append(fit_result[0])
+            preds_test.append(fit_result[1])
+            y_all_gp_test.append(fit_result[2])
+
+    else:
+        i_gp = 0
+        for lat, lon in tqdm(zip(lats.flatten(), lons.flatten())):
+            fit_results = fit_idr(df_ai, df_obs, lat, lon, times_train, times_test)
+
+            idr_fit.append(fit_results[0])
+            preds_test.append(fit_results[1])
+            y_all_gp_test.append(fit_results[2])
+
+            i_gp += 1
     print("Completed fitting in ----", time.time() - start_time, "s---- ")
 
     return idr_fit, preds_test, y_all_gp_test
 
 
-def fit_idr(X_train, y_train, X_test):
+def fit_idr(df_ai, df_obs, lat, lon, times_train, times_test):
     idr = importr("isodistrreg")
-
+    X_train, y_train = prepare_data_over_gp(df_ai, df_obs, lat, lon, times_train)
+    X_test, y_test = prepare_data_over_gp(df_ai, df_obs, lat, lon, times_test)
     idr_fit = idr.idr(y=y_train, X=X_train)
     # print('fitting complete')
 
     preds_test = ro.r.predict(idr_fit, X_test)
 
-    return idr_fit, preds_test
+    return idr_fit, preds_test, y_test
 
 
 def pit(preds, y_test):
@@ -86,16 +114,16 @@ def crps(preds, y_test):
     return ro.r.crps(preds, y_test)
 
 
-def crps_over_gp(preds, y_test, elev):
-    if not isinstance(elev, np.ndarray):
-        elev = np.squeeze(elev.values)
+def crps_over_gp(preds, y_test):
+    mask = xr.open_dataset(
+        "/network/group/aopp/predict/TIP022_NATH_GFSAIMOD//cGAN/constants-regICPAC/lsm.nc"
+    ).lsm.values.astype(bool)
+    mask = ~mask
 
-    mask = xr.open_dataset("~/cGAN/constants-regICPAC/lsm.nc").lsm.values.astype(bool)
+    shape_x = mask.shape[0]
+    shape_y = mask.shape[1]
 
-    shape_x = elev.shape[0]
-    shape_y = elev.shape[1]
-
-    crps_all = np.zeros_like(elev).flatten()
+    crps_all = np.full([shape_x, shape_y], np.nan)
     crps_land = np.zeros(mask.sum())
 
     i_gp = 0
@@ -105,7 +133,7 @@ def crps_over_gp(preds, y_test, elev):
 
     crps_all[mask] = crps_land
 
-    return crps_all.reshape(shape_x, shape_y)
+    return crps_all
 
 
 def crps_over_elev(preds, elev, y_test, lowers, uppers):
@@ -140,11 +168,15 @@ def prepare_data_over_elev(df_ai, df_obs, elev, times, lowers, uppers):
 
 def prepare_data_over_gp(df_ai, df_obs, lat, lon, times):
     y = ro.FloatVector(
-        df_obs.sel({"time": times, "lat": lat, "lon": lon}).values.flatten()
+        df_obs.sel(
+            {"time": times[:-1] + np.timedelta64(1, "D"), "lat": lat, "lon": lon}
+        ).values.flatten()
     )
 
     with (ro.default_converter + pandas2ri.converter).context():
-        x_vals = df_ai.sel({"time": times, "lat": lat, "lon": lon}).values.flatten()
+        x_vals = df_ai.sel(
+            {"time": times[:-1], "lat": lat, "lon": lon}
+        ).values.flatten()
         x_vals = xr.DataArray(np.squeeze(x_vals)).rename("preds")
         X = ro.conversion.get_conversion().py2rpy(x_vals.to_dataframe())
 

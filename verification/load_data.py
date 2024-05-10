@@ -11,6 +11,7 @@ import importlib
 importlib.reload(regridding)
 from regridding import regrid
 from tqdm import tqdm
+from multiprocessing import Pool
 
 # import gcsfs
 
@@ -70,9 +71,13 @@ def get_cGAN(dir, year):
 def get_IMERG_year(year):
     files = glob.glob(TRUTH_PATH_netcdf + f"{year}*.nc")
 
-    return xr.open_mfdataset(files, combine="by_coords").rename(
+    df_IMERG = xr.open_mfdataset(files, combine="by_coords").rename(
         {"latitude": "lat", "longitude": "lon"}
     )
+
+    df_IMERG["time"] = df_IMERG.time - np.timedelta64(6, "h")
+
+    return df_IMERG
 
 
 def get_all_day_hdf5(file, idx_x, idx_y, late=False):
@@ -310,7 +315,6 @@ def load_and_regrid_data(
             )
 
         df_ai_regridded = xr.concat(df_ai_regridded, "model")
-        df_IMERG["time"] = df_IMERG.time - np.timedelta64(6, "h")
 
     else:
         lats_reg, lons_reg, lats_IMERG, lons_IMERG = get_lon_lat_reg(df_ai[0])

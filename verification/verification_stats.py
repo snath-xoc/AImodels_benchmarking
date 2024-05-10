@@ -92,7 +92,7 @@ def MAE_xarray(df, df_ref, times=None, normalised=False, log=True):
         df = df.sel({"time": times})
         df_ref = df_ref.sel({"time": times})
 
-    func = lambda x, y: np.nanmean(np.abs(x - y), axis=-1)
+    func = lambda x, y: np.nanmean(np.abs(x[:, :, :-1] - y[:, :, 1:]), axis=-1)
 
     if normalised and log:
         func = lambda x, y: np.nanmean(
@@ -312,12 +312,12 @@ def Truth_vs_pred_plot_elev(df, df_ref, elev, level=1500, times=None, log=False)
             1 + df_ref.stack(x=("lat", "lon")).query(x="elev>%s" % level).values
         )
         pred = np.log(
-            1 + df.stack(x=("lat", "lon")).query(x="elev>%s" % level).values * 1000 / 6
+            1 + df.stack(x=("lat", "lon")).query(x="elev>%s" % level).values 
         )
 
     else:
         truth = df_ref.stack(x=("lat", "lon")).query(x="elev>%s" % level).values
-        pred = df.stack(x=("lat", "lon")).query(x="elev>%s" % level).values * (1000 / 6)
+        pred = df.stack(x=("lat", "lon")).query(x="elev>%s" % level).values 
 
     nan_values = np.isnan(truth) + np.isnan(pred) + np.isnan(truth) + np.isnan(pred)
 
@@ -347,7 +347,7 @@ def Truth_vs_pred_plot_elev(df, df_ref, elev, level=1500, times=None, log=False)
 
     ax_qq.plot(np.linspace(lb, ub + 1, 20), np.linspace(lb, ub + 1, 20), "k")
     ax_qq.scatter(
-        truth, pred, c="mediumturquoise", edgecolor="lightseagreen", alpha=0.5
+            truth[1:], pred[:-1], c="mediumturquoise", edgecolor="lightseagreen", alpha=0.5
     )
     ax_qq.set_title(
         "Prediction vs truth values at elevation greater than " + str(level) + "m"
@@ -520,8 +520,8 @@ def plot_taylor(pred, obs, elev, marker="o", empty=False, fig=None):
     samples = np.array(
         [
             [
-                pred[:, elev > lev].std(ddof=1),
-                np.corrcoef(obs[:, elev > lev], pred[:, elev > lev])[0, 1],
+                pred[:-1, elev > lev].std(ddof=1),
+                np.corrcoef(obs[1:, elev > lev], pred[:-1, elev > lev])[0, 1],
             ]
             for lev in [0, 1000, 2000, 3000]
         ]
