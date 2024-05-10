@@ -185,15 +185,15 @@ def QQ_plot_elev(df, df_ref, elev, level=1500, times=None, log=False):
             1e-5
             + df_ref.stack(x=("latitude", "longitude"))
             .query(x="elev>%s" % level)
-            .values[1:]
+            .values[:,1:]
         ) - np.log(
-            1e-5 + df.stack(x=("lat", "lon")).query(x="elev>%s" % level).values[:-1]
+            1e-5 + df.stack(x=("lat", "lon")).query(x="elev>%s" % level).values[:,:-1]
         )
     else:
         residuals = df_ref.stack(x=("latitude", "longitude")).query(
             x="elev>%s" % level
-        ).values[1:] - (
-            df.stack(x=("lat", "lon")).query(x="elev>%s" % level).values[:-1]
+        ).values[:,1:] - (
+            df.stack(x=("lat", "lon")).query(x="elev>%s" % level).values[:,:-1]
         )
     # residuals[np.abs(residuals) >= 80] = 0
     # residuals = StandardScaler().fit_transform(residuals.reshape(-1, 1))
