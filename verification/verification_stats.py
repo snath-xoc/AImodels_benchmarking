@@ -46,12 +46,12 @@ def explained_variance_xarray(df, df_ref, times=None, log=True):
         df = df.sel({"time": times})
         df_ref = df_ref.sel({"time": times})
 
-    func = lambda x, y: 1 - np.nanvar(x * 1000 / 6, axis=-1) / np.nanvar(y, axis=-1)
+    func = lambda x, y: 1 - np.nanvar(x[:,:,:-1], axis=-1) / np.nanvar(y[:,:,1:], axis=-1)
 
     if log:
         func = lambda x, y: 1 - np.nanvar(
-            np.log(1 + x * 1000 / 6), axis=-1
-        ) / np.nanvar(np.log(1 + y), axis=-1)
+            np.log(1e-5 + x[:,:,:-1]), axis=-1
+        ) / np.nanvar(np.log(1e-5 + y[:,:,1:]), axis=-1)
 
     mae = xr.apply_ufunc(
         func, df.load(), df_ref.load(), input_core_dims=[["time"], ["time"]]
@@ -195,7 +195,7 @@ def QQ_plot_elev(df, df_ref, elev, level=1500, times=None, log=False):
         ).values[1:] - (
             df.stack(x=("lat", "lon")).query(x="elev>%s" % level).values[:-1]
         )
-    residuals[np.abs(residuals) >= 80] = 0
+    # residuals[np.abs(residuals) >= 80] = 0
     # residuals = StandardScaler().fit_transform(residuals.reshape(-1, 1))
     residuals = residuals[~pd.isnull(residuals)]
 
@@ -309,15 +309,15 @@ def Truth_vs_pred_plot_elev(df, df_ref, elev, level=1500, times=None, log=False)
 
     if log:
         truth = np.log(
-            1 + df_ref.stack(x=("lat", "lon")).query(x="elev>%s" % level).values
+            1e-5 + df_ref.stack(x=("lat", "lon")).query(x="elev>%s" % level).values[:,1:]
         )
         pred = np.log(
-            1 + df.stack(x=("lat", "lon")).query(x="elev>%s" % level).values 
+            1e-5 + df.stack(x=("lat", "lon")).query(x="elev>%s" % level).values[:,:-1]
         )
 
     else:
-        truth = df_ref.stack(x=("lat", "lon")).query(x="elev>%s" % level).values
-        pred = df.stack(x=("lat", "lon")).query(x="elev>%s" % level).values 
+        truth = df_ref.stack(x=("lat", "lon")).query(x="elev>%s" % level).values[:,1:]
+        pred = df.stack(x=("lat", "lon")).query(x="elev>%s" % level).values[:,:-1] 
 
     nan_values = np.isnan(truth) + np.isnan(pred) + np.isnan(truth) + np.isnan(pred)
 
@@ -347,7 +347,7 @@ def Truth_vs_pred_plot_elev(df, df_ref, elev, level=1500, times=None, log=False)
 
     ax_qq.plot(np.linspace(lb, ub + 1, 20), np.linspace(lb, ub + 1, 20), "k")
     ax_qq.scatter(
-            truth[1:], pred[:-1], c="mediumturquoise", edgecolor="lightseagreen", alpha=0.5
+            truth, pred, c="mediumturquoise", edgecolor="lightseagreen", alpha=0.5
     )
     ax_qq.set_title(
         "Prediction vs truth values at elevation greater than " + str(level) + "m"
