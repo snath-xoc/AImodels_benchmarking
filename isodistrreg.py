@@ -48,9 +48,9 @@ def fit_idr_gp(df_ai, df_obs, times_train, times_test, parallel=False, n_workers
     mask = xr.open_dataset(
         "/network/group/aopp/predict/TIP022_NATH_GFSAIMOD//cGAN/constants-regICPAC/lsm.nc"
     ).lsm.values.astype(bool)
-    mask = ~mask
+    # mask = ~mask
 
-    lons, lats = np.meshgrid(df_ai.lon.values, df_ai.lat.values)
+    lons, lats = np.meshgrid(df_obs.lon.values, df_obs.lat.values)
     lats = lats[mask]
     lons = lons[mask]
     print("Fitting on %i grid points" % mask.sum())
@@ -118,7 +118,7 @@ def crps_over_gp(preds, y_test):
     mask = xr.open_dataset(
         "/network/group/aopp/predict/TIP022_NATH_GFSAIMOD//cGAN/constants-regICPAC/lsm.nc"
     ).lsm.values.astype(bool)
-    mask = ~mask
+    # mask = ~mask
 
     shape_x = mask.shape[0]
     shape_y = mask.shape[1]
