@@ -231,6 +231,7 @@ def QQ_plot_elev(df, df_ref, elev, level=1500, times=None, log=False):
 
     if log:
         residuals = np.log(
+
             1e-5 + df_ref.stack(x=("lat", "lon")).query(x="elev>%s" % level).values[1:]
         ) - np.log(
             1e-5 + df.stack(x=("lat", "lon")).query(x="elev>%s" % level).values[:-1]
@@ -239,6 +240,7 @@ def QQ_plot_elev(df, df_ref, elev, level=1500, times=None, log=False):
         residuals = df_ref.stack(x=("lat", "lon")).query(x="elev>%s" % level).values[
             1:
         ] - (df.stack(x=("lat", "lon")).query(x="elev>%s" % level).values[:-1])
+
     # residuals[np.abs(residuals) >= 80] = 0
     # residuals = StandardScaler().fit_transform(residuals.reshape(-1, 1))
     residuals = residuals[~pd.isnull(residuals)]
@@ -362,6 +364,7 @@ def Truth_vs_pred_plot_elev(df, df_ref, elev, level=1500, times=None, log=False)
     else:
         truth = df_ref.stack(x=("lat", "lon")).query(x="elev>%s" % level).values[1:]
         pred = df.stack(x=("lat", "lon")).query(x="elev>%s" % level).values[:-1]
+
 
     nan_values = np.isnan(truth) + np.isnan(pred) + np.isnan(truth) + np.isnan(pred)
 
