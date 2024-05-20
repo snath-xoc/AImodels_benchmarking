@@ -13,7 +13,7 @@ from regridding import regrid
 from tqdm import tqdm
 from multiprocessing import Pool
 
-# import gcsfs
+import gcsfs
 
 months = [
     "Jan",
@@ -41,7 +41,7 @@ TRUTH_PATH_LATE = (
 )
 ERA5_PATH = "/network/group/aopp/predict/TIP022_NATH_GFSAIMOD/graphcast/sample_data/surface/total_precipitation/"
 
-ERA5_VAR_LOOKUP = {"tp": "total_precipitation_24hr"}
+ERA5_VAR_LOOKUP = {"tp": "total_precipitation_6hr"}
 
 
 def get_cGAN(dir, year):
@@ -74,8 +74,7 @@ def get_IMERG_year(year):
     df_IMERG = xr.open_mfdataset(files, combine="by_coords").rename(
         {"latitude": "lat", "longitude": "lon"}
     )
-
-    df_IMERG["time"] = df_IMERG.time - np.timedelta64(6, "h")
+    df_IMERG["time"] = df_IMERG["time"] - np.timedelta64(6, "h")
 
     return df_IMERG
 
@@ -209,7 +208,9 @@ def get_ai_models(models, year):
 
     for model in models:
         files = glob.glob(AI_MODEL_PATH + "%s/*%s*.nc" % (model, str(year)))
-        df.append(xr.open_mfdataset(files))
+        df.append(
+            xr.open_mfdataset(files).rename({"latitude": "lat", "longitude": "lon"})
+        )
 
     return df
 
@@ -310,11 +311,15 @@ def load_and_regrid_data(
             regridder = regrid(lons_reg, lats_reg, df)
             df_ai_regridded.append(
                 regridder(
-                    df[var].mean("step").drop_vars(["surface"]), keep_attrs=True
+                    (df[var].isel({"step": -1}) - df[var].isel({"step": 0})).drop_vars(
+                        ["surface"]
+                    ),
+                    keep_attrs=True,
                 ).expand_dims(dim={"model": [model]}, axis=0)
             )
 
         df_ai_regridded = xr.concat(df_ai_regridded, "model")
+        df_IMERG["time"] = df_IMERG.time  # - np.timedelta64(6, "h")
 
     else:
         lats_reg, lons_reg, lats_IMERG, lons_IMERG = get_lon_lat_reg(df_ai[0])
@@ -324,9 +329,12 @@ def load_and_regrid_data(
         for model, df in zip(models, df_ai):
             regridder = regrid(lons_reg, lats_reg, df)
             df_ai_regridded.append(
-                regridder(df[var], keep_attrs=True).expand_dims(
-                    dim={"model": [model]}, axis=0
-                )
+                regridder(
+                    (df[var].isel({"step": -1}) - df[var].isel({"step": 0})).drop_vars(
+                        ["surface"]
+                    ),
+                    keep_attrs=True,
+                ).expand_dims(dim={"model": [model]}, axis=0)
             )
 
         df_ai_regridded = xr.concat(df_ai_regridded, "model")
@@ -373,7 +381,7 @@ def load_and_regrid_data(
         if ARCO_ERA5:
             times = np.arange(
                 "2018-01-01",
-                "2023-01-01",
+                "2023-01-10",
                 np.timedelta64(6, "h"),
                 dtype="datetime64[ns]",
             )
@@ -418,22 +426,22 @@ def load_and_regrid_data(
         df_era5_regridded = regridder(df_era5[var_era5], keep_attrs=True)
 
         # values_IMERG = Parallel(n_jobs=3)(delayed(get_mean_over_day)(time, idx_x, idx_y) for time in df_era5_regridded.time.values)
-        values_IMERG = [
-            get_mean_over_day(time, idx_x, idx_y)
-            for time in tqdm(df_era5_regridded.time.values)
-        ]
-        values_IMERG = np.stack((values_IMERG))
+        # values_IMERG = [
+        #    get_mean_over_day(time, idx_x, idx_y)
+        #    for time in tqdm(df_era5_regridded.time.values)
+        # ]
+        # values_IMERG = np.stack((values_IMERG))
 
-        df_IMERG_era5 = xr.DataArray(
-            data=values_IMERG,
-            dims=["time", "lat", "lon"],
-            coords={
-                "lat": (["lat"], lats_reg, {"units": "degrees_north"}),
-                "lon": (["lon"], lons_reg, {"units": "degrees_east"}),
-                "time": df_era5_regridded.time.values,
-            },
-        )
-        return df_ai_regridded, df_era5_regridded, df_IMERG, df_IMERG_era5
+        # df_IMERG_era5 = xr.DataArray(
+        #    data=values_IMERG,
+        #    dims=["time", "lat", "lon"],
+        #    coords={
+        #        "lat": (["lat"], lats_reg, {"units": "degrees_north"}),
+        #        "lon": (["lon"], lons_reg, {"units": "degrees_east"}),
+        #        "time": df_era5_regridded.time.values,
+        #    },
+        # )
+        return df_ai_regridded, df_era5_regridded, df_IMERG  # , df_IMERG_era5
 
     else:
         return df_ai_regridded, df_IMERG
